@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test'
-import { ulid, createUlid } from '../src'
+import { ulid, createUlid, timestamp } from '../src'
 
-describe('ulid', () => {
+describe('ulid (non-monotonic, default)', () => {
 	it('returns a 26-character string', () => {
 		const id = ulid()
 		expect(typeof id).toBe('string')
@@ -9,8 +9,6 @@ describe('ulid', () => {
 	})
 
 	it('only contains Crockford Base32 characters', () => {
-		// Crockford Base32: 0123456789ABCDEFGHJKMNPQRSTVWXYZ
-		// Excluded: I, L, O, U
 		const valid = /^[0-9A-HJKMNP-TV-Z]+$/
 		for (let i = 0; i < 100; i++) {
 			expect(ulid()).toMatch(valid)
@@ -32,8 +30,77 @@ describe('ulid', () => {
 		expect(id2 > id1).toBe(true)
 	})
 
+	it('stays unique under high volume (8200 IDs)', () => {
+		const count = 8200
+		const ids = new Set<string>()
+		for (let i = 0; i < count; i++) {
+			ids.add(ulid())
+		}
+		expect(ids.size).toBe(count)
+	})
+
+	it('timestamp() extracts correct ms from a ULID', () => {
+		const before = Date.now()
+		const id = ulid()
+		const after = Date.now()
+
+		const ts = timestamp(id)
+		expect(ts).toBeGreaterThanOrEqual(before)
+		expect(ts).toBeLessThanOrEqual(after)
+	})
+
+	it('timestamp() roundtrips a known value', () => {
+		const gen = createUlid()
+		const originalNow = Date.now
+		Date.now = () => 1_700_000_000_000
+
+		try {
+			const id = gen()
+			expect(timestamp(id)).toBe(1_700_000_000_000)
+		} finally {
+			Date.now = originalNow
+		}
+	})
+
+	it('first 10 chars encode timestamp, last 16 are random', () => {
+		const ids: string[] = []
+		for (let i = 0; i < 100; i++) {
+			ids.push(ulid())
+		}
+
+		const byPrefix = new Map<string, string[]>()
+		for (const id of ids) {
+			const prefix = id.slice(0, 10)
+			const group = byPrefix.get(prefix) ?? []
+			group.push(id)
+			byPrefix.set(prefix, group)
+		}
+
+		const hasCollision = [...byPrefix.values()].some(
+			g => g.length > 1
+		)
+		expect(hasCollision).toBe(true)
+
+		for (const group of byPrefix.values()) {
+			if (group.length > 1) {
+				const suffixes = group.map(id => id.slice(10))
+				const uniqueSuffixes = new Set(suffixes)
+				expect(uniqueSuffixes.size).toBe(suffixes.length)
+			}
+		}
+	})
+})
+
+describe('ulid({ monotonic: true })', () => {
+	it('returns a 26-character Crockford Base32 string', () => {
+		const valid = /^[0-9A-HJKMNP-TV-Z]{26}$/
+		for (let i = 0; i < 100; i++) {
+			expect(ulid({ monotonic: true })).toMatch(valid)
+		}
+	})
+
 	it('is monotonic within the same millisecond', () => {
-		const generator = createUlid()
+		const generator = createUlid({ monotonic: true })
 		const originalNow = Date.now
 		Date.now = () => 1_700_000_000_000
 
@@ -52,7 +119,7 @@ describe('ulid', () => {
 	})
 
 	it('stays monotonic when system clock moves backwards', () => {
-		const generator = createUlid()
+		const generator = createUlid({ monotonic: true })
 		const originalNow = Date.now
 		let now = 5_000
 		Date.now = () => now
@@ -73,42 +140,52 @@ describe('ulid', () => {
 		}
 	})
 
-	it('stays unique under high volume (8200 IDs)', () => {
+	it('generates unique IDs (10,000)', () => {
+		const ids = new Set<string>()
+		for (let i = 0; i < 10_000; i++) {
+			ids.add(ulid({ monotonic: true }))
+		}
+		expect(ids.size).toBe(10_000)
+	})
+})
+
+describe('createUlid (non-monotonic, default)', () => {
+	it('creates an isolated generator', () => {
+		const gen = createUlid()
+		const ids = new Set<string>()
+		for (let i = 0; i < 1000; i++) {
+			ids.add(gen())
+		}
+		expect(ids.size).toBe(1000)
+	})
+
+	it('stays unique across random pool refills (8200+ IDs)', () => {
+		const gen = createUlid()
 		const count = 8200
 		const ids = new Set<string>()
 		for (let i = 0; i < count; i++) {
-			ids.add(ulid())
+			ids.add(gen())
 		}
 		expect(ids.size).toBe(count)
 	})
+})
 
-	it('first 10 chars encode timestamp, last 16 are random', () => {
-		const ids: string[] = []
-		for (let i = 0; i < 100; i++) {
-			ids.push(ulid())
-		}
+describe('createUlid({ monotonic: true })', () => {
+	it('creates an isolated monotonic generator', () => {
+		const gen = createUlid({ monotonic: true })
+		const originalNow = Date.now
+		Date.now = () => 1_700_000_000_000
 
-		const byPrefix = new Map<string, string[]>()
-		for (const id of ids) {
-			const prefix = id.slice(0, 10)
-			const group = byPrefix.get(prefix) ?? []
-			group.push(id)
-			byPrefix.set(prefix, group)
-		}
-
-		// Tight loop — at least one prefix group should have multiple IDs
-		const hasCollision = [...byPrefix.values()].some(
-			g => g.length > 1
-		)
-		expect(hasCollision).toBe(true)
-
-		// Within same-timestamp groups, random suffixes must differ
-		for (const group of byPrefix.values()) {
-			if (group.length > 1) {
-				const suffixes = group.map(id => id.slice(10))
-				const uniqueSuffixes = new Set(suffixes)
-				expect(uniqueSuffixes.size).toBe(suffixes.length)
+		try {
+			const ids: string[] = []
+			for (let i = 0; i < 100; i++) {
+				ids.push(gen())
 			}
+			for (let i = 1; i < ids.length; i++) {
+				expect(ids[i] > ids[i - 1]).toBe(true)
+			}
+		} finally {
+			Date.now = originalNow
 		}
 	})
 })

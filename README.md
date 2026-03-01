@@ -1,6 +1,6 @@
 # fast-ulid
 
-Fastest spec-compliant monotonic ULID generator for JavaScript. ~62ns per ID, zero dependencies.
+Fastest spec-compliant ULID generator for JavaScript. Zero dependencies.
 
 ## Install
 
@@ -13,61 +13,51 @@ npm install fast-ulid
 ```ts
 import { ulid, createUlid, timestamp } from 'fast-ulid'
 
-// Generate a ULID
+// Generate a ULID (non-monotonic, fastest)
 const id = ulid()
-// → "01HYX3QGZK4P8RJ5N0VWMT6B2A"
 
-// Extract the timestamp
+// Monotonic ULID (same-ms IDs are lexicographically increasing)
+const id2 = ulid({ monotonic: true })
+
+// Extract the timestamp from any ULID
 const ms = timestamp(id)
-// → 1700000000000
 
 // Create an isolated generator (useful for Workers)
-const generate = createUlid()
-generate()
-generate()
+const generate = createUlid()                    // non-monotonic
+const generateMono = createUlid({ monotonic: true }) // monotonic
 ```
 
 ## API
 
-### `ulid(): string`
+### `ulid(opts?): string`
 
-Generate a ULID using the default shared generator. Returns a 26-character Crockford Base32 string.
+Generate a ULID. Returns a 26-character Crockford Base32 string.
 
-### `createUlid(): () => string`
+By default, generates a non-monotonic ULID (fresh random bytes each call). Pass `{ monotonic: true }` for same-millisecond lexicographic ordering.
 
-Create an isolated generator with its own monotonic state. Use this when you need a dedicated generator per Worker thread to avoid contention.
+### `createUlid(opts?): () => string`
+
+Create an isolated generator with its own state. Use this when you need a dedicated generator per Worker thread to avoid contention.
+
+Pass `{ monotonic: true }` for a monotonic generator.
 
 ### `timestamp(id: string): number`
 
-Extract the UNIX millisecond timestamp from a ULID string. Unrolled decode — ~5.8ns per call.
-
-## Benchmark
-
-Measured on Apple M1, Bun 1.3.10:
-
-| Operation | fast-ulid | crypto.randomUUID() |
-|---|---|---|
-| Single ID | **62 ns** | 44 ns |
-| Batch 1000 | **84 µs** | 43 µs |
-
-`crypto.randomUUID()` is a native C++ call that formats 128 random bits. `fast-ulid` does more work — timestamp encoding, monotonic ordering, Crockford Base32 — and is still within 1.5x.
-
-```bash
-bun run bench
-```
+Extract the UNIX millisecond timestamp from a ULID string.
 
 ## What makes it fast
 
 - **Batched randomness** — `crypto.getRandomValues` called once per 8,192 IDs, not every call
 - **Pre-computed lookup table** — Uint8Array maps digit → charCode, no string indexing
 - **Reused output buffer** — single `Uint8Array(26)` + `TextDecoder`, zero allocations in hot path
+- **Timestamp caching** — non-monotonic path skips timestamp writes when ms hasn't changed
 - **Monotonic increment** — same-ms IDs bump a counter instead of regenerating randomness
 - **Bit masking** — `& 31` instead of modulo
 - **Unrolled loops** — timestamp encode/decode fully unrolled, no loop overhead
 
 ## Spec compliance
 
-Fully compliant with the [ULID spec](https://github.com/ulid/spec). 26 tests verify:
+Fully compliant with the [ULID spec](https://github.com/ulid/spec). 41 tests verify:
 
 | Requirement | |
 |---|---|

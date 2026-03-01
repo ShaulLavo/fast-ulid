@@ -1,7 +1,7 @@
 {
 	"name": "fast-ulid",
 	"version": "1.0.0",
-	"description": "Fastest spec-compliant monotonic ULID generator. ~62ns/id, zero dependencies.",
+	"description": "Fastest spec-compliant monotonic ULID generator. Zero dependencies.",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -19,7 +19,6 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"test": "bun test",
-		"bench": "bun run test/bench.ts",
 		"prepublishOnly": "bun run build"
 	},
 	"keywords": [
@@ -45,7 +44,6 @@
 		"url": "https://github.com/ShaulLavo/fast-ulid/issues"
 	},
 	"devDependencies": {
-		"mitata": "^1.0.34",
 		"typescript": "^5.7.0",
 		"bun-types": "latest"
 	}

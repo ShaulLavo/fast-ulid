@@ -1,7 +1,7 @@
-// fast-ulid — Monotonic ULID implementation
-// - Lexicographically increasing even for multiple IDs in the same millisecond
-// - Monotonic under clock rollback by pinning to the last emitted timestamp
-// - `createUlid()` provides isolated state so callers can create one generator per Worker
+// fast-ulid — Fast ULID generator
+// - Monotonic mode: lexicographically increasing even within the same millisecond
+// - Non-monotonic mode (default): fresh random bytes every call, maximum throughput
+// - `createUlid()` provides isolated state for Worker threads
 // - Zero dependencies, works in Node, Bun, Deno, and browsers
 
 const ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
@@ -9,143 +9,184 @@ const RANDOM_DIGITS = 16
 const MAX_DIGIT = 31
 const BATCH = 8192
 
-interface UlidState {
-	lastTimestamp: number
-	lastRandom: Uint8Array<ArrayBuffer>
-	randomPool: Uint8Array<ArrayBuffer>
-	randomPoolPos: number
-	outBuf: Uint8Array<ArrayBuffer>
-	decoder: TextDecoder
-}
-
 const ENC = new Uint8Array(32)
 for (let i = 0; i < 32; i++) ENC[i] = ENCODING.charCodeAt(i)
 
-function fillRandomPool(state: UlidState): void {
-	crypto.getRandomValues(state.randomPool)
-	state.randomPoolPos = 0
+// ── Shared internal helpers ─────────────────────────────────────────
+
+function writeTimestamp(out: Uint8Array, t: number): void {
+	out[0] = ENC[Math.floor(t / 35184372088832) & MAX_DIGIT] // 2^45
+	out[1] = ENC[Math.floor(t / 1099511627776) & MAX_DIGIT] // 2^40
+	out[2] = ENC[Math.floor(t / 34359738368) & MAX_DIGIT] // 2^35
+	out[3] = ENC[Math.floor(t / 1073741824) & MAX_DIGIT] // 2^30
+	out[4] = ENC[Math.floor(t / 33554432) & MAX_DIGIT] // 2^25
+	out[5] = ENC[Math.floor(t / 1048576) & MAX_DIGIT] // 2^20
+	out[6] = ENC[Math.floor(t / 32768) & MAX_DIGIT] // 2^15
+	out[7] = ENC[Math.floor(t / 1024) & MAX_DIGIT] // 2^10
+	out[8] = ENC[Math.floor(t / 32) & MAX_DIGIT] // 2^5
+	out[9] = ENC[t & MAX_DIGIT] // 2^0
 }
 
-function setRandomFromPool(state: UlidState): void {
-	if (state.randomPoolPos >= BATCH) fillRandomPool(state)
+// ── Monotonic generator ─────────────────────────────────────────────
 
-	const poolOffset = state.randomPoolPos * RANDOM_DIGITS
-	state.randomPoolPos += 1
+interface MonoState {
+	lastTimestamp: number
+	lastRandom: Uint8Array
+	pool: Uint8Array
+	poolPos: number
+	out: Uint8Array
+	dec: TextDecoder
+}
 
+function monoSetRandom(s: MonoState): void {
+	if (s.poolPos >= BATCH) {
+		crypto.getRandomValues(s.pool)
+		s.poolPos = 0
+	}
+	const off = s.poolPos * RANDOM_DIGITS
+	s.poolPos += 1
 	for (let i = 0; i < RANDOM_DIGITS; i++) {
-		const digit =
-			state.randomPool[poolOffset + i] & MAX_DIGIT
-		state.lastRandom[i] = digit
-		state.outBuf[10 + i] = ENC[digit]
+		const d = s.pool[off + i] & MAX_DIGIT
+		s.lastRandom[i] = d
+		s.out[10 + i] = ENC[d]
 	}
 }
 
-function incrementRandom(state: UlidState): boolean {
-	const random = state.lastRandom
-	const out = state.outBuf
+function monoIncrement(s: MonoState): boolean {
 	for (let i = RANDOM_DIGITS - 1; i >= 0; i--) {
-		const value = random[i]
-		if (value < MAX_DIGIT) {
-			const next = value + 1
-			random[i] = next
-			out[10 + i] = ENC[next]
+		const v = s.lastRandom[i]
+		if (v < MAX_DIGIT) {
+			const next = v + 1
+			s.lastRandom[i] = next
+			s.out[10 + i] = ENC[next]
 			return true
 		}
-
-		random[i] = 0
-		out[10 + i] = ENC[0]
+		s.lastRandom[i] = 0
+		s.out[10 + i] = ENC[0]
 	}
-
 	return false
 }
 
-function nextTimestamp(previousTimestamp: number): number {
-	let timestamp = Date.now()
-	if (timestamp > previousTimestamp) return timestamp
-
-	while (timestamp <= previousTimestamp) {
-		timestamp = Date.now()
-	}
-
-	return timestamp
+function monoNextTs(prev: number): number {
+	let t = Date.now()
+	while (t <= prev) t = Date.now()
+	return t
 }
 
-function setTimestamp(
-	out: Uint8Array,
-	timestamp: number
-): void {
-	// 10 chars of timestamp (48 bits, 5 bits per char, Crockford base32, MSB first).
-	// Divisors are exact powers of 2, so Math.floor division is float-precise.
-	out[0] =
-		ENC[Math.floor(timestamp / 35184372088832) & MAX_DIGIT] // 2^45
-	out[1] =
-		ENC[Math.floor(timestamp / 1099511627776) & MAX_DIGIT] // 2^40
-	out[2] =
-		ENC[Math.floor(timestamp / 34359738368) & MAX_DIGIT] // 2^35
-	out[3] =
-		ENC[Math.floor(timestamp / 1073741824) & MAX_DIGIT] // 2^30
-	out[4] = ENC[Math.floor(timestamp / 33554432) & MAX_DIGIT] // 2^25
-	out[5] = ENC[Math.floor(timestamp / 1048576) & MAX_DIGIT] // 2^20
-	out[6] = ENC[Math.floor(timestamp / 32768) & MAX_DIGIT] // 2^15
-	out[7] = ENC[Math.floor(timestamp / 1024) & MAX_DIGIT] // 2^10
-	out[8] = ENC[Math.floor(timestamp / 32) & MAX_DIGIT] // 2^5
-	out[9] = ENC[timestamp & MAX_DIGIT] // 2^0
-}
-
-function nextMonotonicTimestamp(
-	lastTimestamp: number,
-	now: number
-): number {
-	if (now > lastTimestamp) return now
-	return lastTimestamp
-}
-
-/** Create an isolated ULID generator with its own monotonic state. Useful for Workers. */
-export function createUlid(): () => string {
-	const state: UlidState = {
+function createMonotonic(): () => string {
+	const s: MonoState = {
 		lastTimestamp: -1,
 		lastRandom: new Uint8Array(RANDOM_DIGITS),
-		randomPool: new Uint8Array(BATCH * RANDOM_DIGITS),
-		randomPoolPos: BATCH,
-		outBuf: new Uint8Array(26),
-		decoder: new TextDecoder()
+		pool: new Uint8Array(BATCH * RANDOM_DIGITS),
+		poolPos: BATCH,
+		out: new Uint8Array(26),
+		dec: new TextDecoder()
 	}
 
-	return function ulidFromState(): string {
-		const timestamp = nextMonotonicTimestamp(
-			state.lastTimestamp,
-			Date.now()
-		)
-		if (timestamp > state.lastTimestamp) {
-			state.lastTimestamp = timestamp
-			setTimestamp(state.outBuf, state.lastTimestamp)
-			setRandomFromPool(state)
-			return state.decoder.decode(state.outBuf)
+	return function monotonic(): string {
+		const now = Date.now()
+		const ts = now > s.lastTimestamp ? now : s.lastTimestamp
+
+		if (ts > s.lastTimestamp) {
+			s.lastTimestamp = ts
+			writeTimestamp(s.out, ts)
+			monoSetRandom(s)
+			return s.dec.decode(s.out)
 		}
 
-		if (incrementRandom(state)) {
-			return state.decoder.decode(state.outBuf)
+		if (monoIncrement(s)) {
+			return s.dec.decode(s.out)
 		}
 
-		state.lastTimestamp = nextTimestamp(state.lastTimestamp)
-		setTimestamp(state.outBuf, state.lastTimestamp)
-		setRandomFromPool(state)
-		return state.decoder.decode(state.outBuf)
+		s.lastTimestamp = monoNextTs(s.lastTimestamp)
+		writeTimestamp(s.out, s.lastTimestamp)
+		monoSetRandom(s)
+		return s.dec.decode(s.out)
 	}
 }
 
-/** Default shared ULID generator. */
-export const ulid = createUlid()
+// ── Non-monotonic generator ─────────────────────────────────────────
 
-// Reverse lookup: charCode → base32 digit value (0-31), 0xFF = invalid.
-// Covers ASCII 0–127. Built once at module load.
+// Pair lookup: 10-bit index (5+5 bits) → 2-char Crockford Base32 string.
+// 1024 entries, built once at module load. Eliminates TextDecoder entirely.
+const PAIR = new Array<string>(1024)
+for (let i = 0; i < 1024; i++)
+	PAIR[i] = ENCODING[(i >> 5) & 31] + ENCODING[i & 31]
+
+function encodeTimestampStr(t: number): string {
+	return String.fromCharCode(
+		ENC[Math.floor(t / 35184372088832) & MAX_DIGIT],
+		ENC[Math.floor(t / 1099511627776) & MAX_DIGIT],
+		ENC[Math.floor(t / 34359738368) & MAX_DIGIT],
+		ENC[Math.floor(t / 1073741824) & MAX_DIGIT],
+		ENC[Math.floor(t / 33554432) & MAX_DIGIT],
+		ENC[Math.floor(t / 1048576) & MAX_DIGIT],
+		ENC[Math.floor(t / 32768) & MAX_DIGIT],
+		ENC[Math.floor(t / 1024) & MAX_DIGIT],
+		ENC[Math.floor(t / 32) & MAX_DIGIT],
+		ENC[t & MAX_DIGIT]
+	)
+}
+
+function createNonMonotonic(): () => string {
+	const pool = new Uint8Array(BATCH * RANDOM_DIGITS)
+	let poolPos = BATCH
+	let lastT = -1
+	let tsStr = ''
+
+	return function nonMonotonic(): string {
+		if (poolPos >= BATCH) {
+			crypto.getRandomValues(pool)
+			poolPos = 0
+		}
+
+		const t = Date.now()
+		if (t !== lastT) {
+			lastT = t
+			tsStr = encodeTimestampStr(t)
+		}
+
+		const b = poolPos * RANDOM_DIGITS
+		poolPos += 1
+
+		return tsStr
+			+ PAIR[((pool[b] & MAX_DIGIT) << 5) | (pool[b + 1] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 2] & MAX_DIGIT) << 5) | (pool[b + 3] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 4] & MAX_DIGIT) << 5) | (pool[b + 5] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 6] & MAX_DIGIT) << 5) | (pool[b + 7] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 8] & MAX_DIGIT) << 5) | (pool[b + 9] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 10] & MAX_DIGIT) << 5) | (pool[b + 11] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 12] & MAX_DIGIT) << 5) | (pool[b + 13] & MAX_DIGIT)]
+			+ PAIR[((pool[b + 14] & MAX_DIGIT) << 5) | (pool[b + 15] & MAX_DIGIT)]
+	}
+}
+
+// ── Public API ──────────────────────────────────────────────────────
+
+export interface UlidOptions {
+	monotonic?: boolean
+}
+
+/** Create an isolated ULID generator. Non-monotonic by default. */
+export function createUlid(opts?: UlidOptions): () => string {
+	return opts?.monotonic ? createMonotonic() : createNonMonotonic()
+}
+
+const _shared = createNonMonotonic()
+const _sharedMono = createMonotonic()
+
+/** Generate a ULID. Non-monotonic by default. Pass `{ monotonic: true }` for same-ms ordering. */
+export function ulid(opts?: UlidOptions): string {
+	return opts?.monotonic ? _sharedMono() : _shared()
+}
+
+// ── Timestamp decoder ───────────────────────────────────────────────
+
 const DEC = new Uint8Array(128).fill(0xff)
 for (let i = 0; i < 32; i++) DEC[ENCODING.charCodeAt(i)] = i
 
 /** Extract the UNIX-ms timestamp from a ULID string. */
 export function timestamp(id: string): number {
-	// 10 Crockford base32 chars → 50 bits → fits in a JS number (53-bit mantissa).
-	// Unrolled to avoid loop overhead.
 	return (
 		DEC[id.charCodeAt(0)] * 35184372088832 + // 2^45
 		DEC[id.charCodeAt(1)] * 1099511627776 + // 2^40

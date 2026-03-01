@@ -92,7 +92,7 @@ describe('ULID spec compliance', () => {
 
 	describe('4. Monotonicity', () => {
 		it('same-millisecond IDs are strictly increasing', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			Date.now = () => 1_700_000_000_000
 
@@ -111,7 +111,7 @@ describe('ULID spec compliance', () => {
 		})
 
 		it('same-ms: randomness increments by 1 in least significant position', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			Date.now = () => 1_700_000_000_000
 
@@ -130,7 +130,7 @@ describe('ULID spec compliance', () => {
 		})
 
 		it('carry propagates correctly on increment overflow', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			Date.now = () => 1_700_000_000_000
 
@@ -151,7 +151,7 @@ describe('ULID spec compliance', () => {
 
 	describe('5. Overflow handling', () => {
 		it('handles randomness overflow by advancing timestamp', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			let fakeTime = 1_700_000_000_000
 			Date.now = () => fakeTime
@@ -185,7 +185,7 @@ describe('ULID spec compliance', () => {
 		})
 
 		it('string comparison works for same-ms monotonic IDs', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			Date.now = () => 1_700_000_000_000
 
@@ -205,7 +205,7 @@ describe('ULID spec compliance', () => {
 
 	describe('7. Clock rollback resilience', () => {
 		it('IDs remain monotonic when clock goes backwards', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			let fakeTime = 1_700_000_000_000
 			Date.now = () => fakeTime
@@ -230,7 +230,7 @@ describe('ULID spec compliance', () => {
 		})
 
 		it('resumes normal timestamps after clock catches up', () => {
-			const gen = createUlid()
+			const gen = createUlid({ monotonic: true })
 			const originalNow = Date.now
 			let fakeTime = 1_700_000_000_000
 			Date.now = () => fakeTime
