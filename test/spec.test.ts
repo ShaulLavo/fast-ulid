@@ -366,6 +366,30 @@ describe('timestamp()', () => {
 			Date.now = originalNow
 		}
 	})
+
+	it('accepts lowercase ULIDs', () => {
+		const id = ulid()
+		const upper = timestamp(id)
+		const lower = timestamp(id.toLowerCase())
+		expect(lower).toBe(upper)
+	})
+
+	it('accepts mixed-case ULIDs', () => {
+		const id = ulid()
+		const mixed = id.slice(0, 5).toLowerCase() + id.slice(5)
+		expect(timestamp(mixed)).toBe(timestamp(id))
+	})
+
+	it('throws on invalid characters', () => {
+		expect(() => timestamp('!!!!!!!!!!!!!!!!!!!!!!!!!!'))
+			.toThrow('Invalid ULID')
+	})
+
+	it('throws on strings with invalid chars in timestamp portion', () => {
+		const id = ulid()
+		const bad = 'I' + id.slice(1) // 'I' is not in Crockford Base32
+		expect(() => timestamp(bad)).toThrow('Invalid ULID')
+	})
 })
 
 /** Decode a Crockford base32 string to a number (for timestamp — up to 50 bits) */

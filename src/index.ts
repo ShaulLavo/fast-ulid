@@ -183,20 +183,39 @@ export function ulid(opts?: UlidOptions): string {
 // ── Timestamp decoder ───────────────────────────────────────────────
 
 const DEC = new Uint8Array(128).fill(0xff)
-for (let i = 0; i < 32; i++) DEC[ENCODING.charCodeAt(i)] = i
+for (let i = 0; i < 32; i++) {
+	DEC[ENCODING.charCodeAt(i)] = i
+	// Also map lowercase letters (charCode | 0x20 gives lowercase)
+	const lower = ENCODING.charCodeAt(i) | 0x20
+	if (lower !== ENCODING.charCodeAt(i)) DEC[lower] = i
+}
 
-/** Extract the UNIX-ms timestamp from a ULID string. */
+/** Extract the UNIX-ms timestamp from a ULID string. Accepts uppercase or lowercase. */
 export function timestamp(id: string): number {
+	const d0 = DEC[id.charCodeAt(0)]
+	const d1 = DEC[id.charCodeAt(1)]
+	const d2 = DEC[id.charCodeAt(2)]
+	const d3 = DEC[id.charCodeAt(3)]
+	const d4 = DEC[id.charCodeAt(4)]
+	const d5 = DEC[id.charCodeAt(5)]
+	const d6 = DEC[id.charCodeAt(6)]
+	const d7 = DEC[id.charCodeAt(7)]
+	const d8 = DEC[id.charCodeAt(8)]
+	const d9 = DEC[id.charCodeAt(9)]
+
+	if ((d0 | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9) === 0xff)
+		throw new Error('Invalid ULID')
+
 	return (
-		DEC[id.charCodeAt(0)] * 35184372088832 + // 2^45
-		DEC[id.charCodeAt(1)] * 1099511627776 + // 2^40
-		DEC[id.charCodeAt(2)] * 34359738368 + // 2^35
-		DEC[id.charCodeAt(3)] * 1073741824 + // 2^30
-		DEC[id.charCodeAt(4)] * 33554432 + // 2^25
-		DEC[id.charCodeAt(5)] * 1048576 + // 2^20
-		DEC[id.charCodeAt(6)] * 32768 + // 2^15
-		DEC[id.charCodeAt(7)] * 1024 + // 2^10
-		DEC[id.charCodeAt(8)] * 32 + // 2^5
-		DEC[id.charCodeAt(9)] // 2^0
+		d0 * 35184372088832 + // 2^45
+		d1 * 1099511627776 + // 2^40
+		d2 * 34359738368 + // 2^35
+		d3 * 1073741824 + // 2^30
+		d4 * 33554432 + // 2^25
+		d5 * 1048576 + // 2^20
+		d6 * 32768 + // 2^15
+		d7 * 1024 + // 2^10
+		d8 * 32 + // 2^5
+		d9 // 2^0
 	)
 }
