@@ -43,21 +43,34 @@ Pass `{ monotonic: true }` for a monotonic generator.
 
 ### `timestamp(id: string): number`
 
-Extract the UNIX millisecond timestamp from a ULID string.
+Extract the UNIX millisecond timestamp from a ULID string. Accepts uppercase or lowercase. Throws on invalid characters.
+
+## Benchmark
+
+Apple M1, Bun 1.3.10 ([source](https://github.com/ShaulLavo/fast-ulid-bench)):
+
+| Benchmark | fast-ulid | ulid | ulidx | crypto.randomUUID |
+|---|---|---|---|---|
+| Single ID (monotonic) | **57 ns** | 465 ns | 476 ns | 73 ns |
+| Single ID (non-monotonic) | **47 ns** | 872 ns | 894 ns | — |
+| Batch 1k (monotonic) | **84 µs** | 478 µs | 473 µs | 44 µs |
+| Batch 1k (non-monotonic) | **68 µs** | 902 µs | 897 µs | 44 µs |
+| Timestamp decode | **2.3 ns** | 284 ns | 306 ns | — |
 
 ## What makes it fast
 
 - **Batched randomness** — `crypto.getRandomValues` called once per 8,192 IDs, not every call
 - **Pre-computed lookup table** — Uint8Array maps digit → charCode, no string indexing
-- **Reused output buffer** — single `Uint8Array(26)` + `TextDecoder`, zero allocations in hot path
-- **Timestamp caching** — non-monotonic path skips timestamp writes when ms hasn't changed
+- **Pair lookup table** — 1024-entry table maps 10 bits → 2-char string, eliminates TextDecoder from non-monotonic path
+- **Reused output buffer** — single `Uint8Array(26)` + `TextDecoder`, zero allocations in monotonic hot path
+- **Timestamp caching** — non-monotonic path skips timestamp encoding when ms hasn't changed
 - **Monotonic increment** — same-ms IDs bump a counter instead of regenerating randomness
 - **Bit masking** — `& 31` instead of modulo
 - **Unrolled loops** — timestamp encode/decode fully unrolled, no loop overhead
 
 ## Spec compliance
 
-Fully compliant with the [ULID spec](https://github.com/ulid/spec). 41 tests verify:
+Fully compliant with the [ULID spec](https://github.com/ulid/spec). 45 tests verify:
 
 | Requirement | |
 |---|---|
@@ -70,6 +83,8 @@ Fully compliant with the [ULID spec](https://github.com/ulid/spec). 41 tests ver
 | Clock rollback resilience | ✅ |
 | 10,000+ unique IDs | ✅ |
 | Encode/decode roundtrip | ✅ |
+| Case-insensitive decoding | ✅ |
+| Invalid input rejection | ✅ |
 
 ```bash
 bun test
