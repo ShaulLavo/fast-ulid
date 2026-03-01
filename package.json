@@ -1,7 +1,7 @@
 {
 	"name": "fast-ulid",
 	"version": "1.0.0",
-	"description": "Fastest spec-compliant monotonic ULID generator. Zero dependencies.",
+	"description": "Fastest spec-compliant ULID generator. Zero dependencies.",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

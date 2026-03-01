@@ -1,12 +1,31 @@
 # fast-ulid
 
-Fastest spec-compliant ULID generator for JavaScript. Zero dependencies.
+Fastest spec-compliant ULID generator for JavaScript. Zero dependencies, ~2KB gzipped.
+
+> **ULID** = timestamp + randomness in a single 26-char, URL-safe, sortable string.
+>
+> ```
+> 01ARZ3NDEKTSV4RRFFQ69G5FAV   ← ULID (sortable, no dashes, encodes time)
+> 550e8400-e29b-41d4-a716-44…  ← UUID (random, dashes, no ordering)
+> ```
 
 ## Install
 
 ```bash
 npm install fast-ulid
 ```
+
+## Benchmark
+
+Apple M1, Bun 1.3.10 ([source](https://github.com/ShaulLavo/fast-ulid-bench)):
+
+| Benchmark | fast-ulid | ulid | ulidx | crypto.randomUUID |
+|---|---|---|---|---|
+| Single ID (monotonic) | **57 ns** | 465 ns | 476 ns | 73 ns |
+| Single ID (non-monotonic) | **47 ns** | 872 ns | 894 ns | — |
+| Batch 1k (monotonic) | **84 µs** | 478 µs | 473 µs | 44 µs |
+| Batch 1k (non-monotonic) | **68 µs** | 902 µs | 897 µs | 44 µs |
+| Timestamp decode | **2.3 ns** | 284 ns | 306 ns | — |
 
 ## Usage
 
@@ -45,28 +64,14 @@ Pass `{ monotonic: true }` for a monotonic generator.
 
 Extract the UNIX millisecond timestamp from a ULID string. Accepts uppercase or lowercase.
 
-## Benchmark
-
-Apple M1, Bun 1.3.10 ([source](https://github.com/ShaulLavo/fast-ulid-bench)):
-
-| Benchmark | fast-ulid | ulid | ulidx | crypto.randomUUID |
-|---|---|---|---|---|
-| Single ID (monotonic) | **57 ns** | 465 ns | 476 ns | 73 ns |
-| Single ID (non-monotonic) | **47 ns** | 872 ns | 894 ns | — |
-| Batch 1k (monotonic) | **84 µs** | 478 µs | 473 µs | 44 µs |
-| Batch 1k (non-monotonic) | **68 µs** | 902 µs | 897 µs | 44 µs |
-| Timestamp decode | **2.3 ns** | 284 ns | 306 ns | — |
-
 ## What makes it fast
 
-- **Batched randomness** — `crypto.getRandomValues` called once per 8,192 IDs, not every call
-- **Pre-computed lookup table** — Uint8Array maps digit → charCode, no string indexing
-- **Pair lookup table** — 1024-entry table maps 10 bits → 2-char string, eliminates TextDecoder from non-monotonic path
-- **Reused output buffer** — single `Uint8Array(26)` + `TextDecoder`, zero allocations in monotonic hot path
-- **Timestamp caching** — non-monotonic path skips timestamp encoding when ms hasn't changed
+- **Batched `crypto.getRandomValues`** — one call per 8,192 IDs instead of every call
+- **Pair lookup table** — 1024-entry table maps 10 bits to a 2-char string, eliminates TextDecoder from non-monotonic path
+- **Timestamp caching** — skips re-encoding when ms hasn't changed
 - **Monotonic increment** — same-ms IDs bump a counter instead of regenerating randomness
-- **Bit masking** — `& 31` instead of modulo
-- **Unrolled loops** — timestamp encode/decode fully unrolled, no loop overhead
+- **Zero allocations** — reused buffers, no intermediate objects in the hot path
+- **Fully unrolled** — no loops in encode/decode, all arithmetic inlined
 
 ## Spec compliance
 
@@ -81,7 +86,6 @@ Fully compliant with the [ULID spec](https://github.com/ulid/spec). 45 tests ver
 | Overflow advances timestamp | ✅ |
 | Lexicographic sort = chronological sort | ✅ |
 | Clock rollback resilience | ✅ |
-| 10,000+ unique IDs | ✅ |
 | Encode/decode roundtrip | ✅ |
 
 ```bash
@@ -90,7 +94,7 @@ bun test
 
 ## Runtime support
 
-Works everywhere with `crypto.getRandomValues`, `Date.now`, and `TextDecoder`:
+Works everywhere with `crypto.getRandomValues` and `Date.now`:
 
 - Node.js 16+
 - Bun
