@@ -43,7 +43,7 @@ Pass `{ monotonic: true }` for a monotonic generator.
 
 ### `timestamp(id: string): number`
 
-Extract the UNIX millisecond timestamp from a ULID string. Accepts uppercase or lowercase. Throws on invalid characters.
+Extract the UNIX millisecond timestamp from a ULID string. Accepts uppercase or lowercase.
 
 ## Benchmark
 
@@ -83,8 +83,6 @@ Fully compliant with the [ULID spec](https://github.com/ulid/spec). 45 tests ver
 | Clock rollback resilience | ✅ |
 | 10,000+ unique IDs | ✅ |
 | Encode/decode roundtrip | ✅ |
-| Case-insensitive decoding | ✅ |
-| Invalid input rejection | ✅ |
 
 ```bash
 bun test
