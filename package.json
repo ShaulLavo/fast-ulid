@@ -1,6 +1,6 @@
 {
 	"name": "fast-ulid",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "Fastest spec-compliant ULID generator. Zero dependencies.",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -13,8 +13,7 @@
 		}
 	},
 	"files": [
-		"dist",
-		"src"
+		"dist"
 	],
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
