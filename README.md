@@ -1,6 +1,6 @@
 # fast-ulid
 
-Fastest spec-compliant ULID generator for JavaScript. Zero dependencies, ~2KB gzipped.
+Fastest spec-compliant ULID generator for JavaScript. Zero dependencies, [1.1KB gzipped](https://bundlephobia.com/package/fast-ulid).
 
 > **ULID** = timestamp + randomness in a single 26-char, URL-safe, sortable string.
 >
