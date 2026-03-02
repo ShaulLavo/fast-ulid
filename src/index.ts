@@ -108,7 +108,7 @@ function createMonotonic(): () => string {
 // ── Non-monotonic generator ─────────────────────────────────────────
 
 // Pair lookup: 10-bit index (5+5 bits) → 2-char Crockford Base32 string.
-// 1024 entries, built once at module load. Eliminates TextDecoder entirely.
+// 1024 entries, built once at module load.
 const PAIR = new Array<string>(1024)
 for (let i = 0; i < 1024; i++)
 	PAIR[i] = ENCODING[(i >> 5) & 31] + ENCODING[i & 31]
