@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'bun:test'
 import { ulid, createUlid, timestamp } from '../src'
 
+const GET_RANDOM_VALUES_MAX_BYTES = 65_536
+
 describe('ulid (non-monotonic, default)', () => {
 	it('returns a 26-character string', () => {
 		const id = ulid()
@@ -89,6 +91,16 @@ describe('ulid (non-monotonic, default)', () => {
 			}
 		}
 	})
+
+	it('keeps random refills within the Web Crypto byte limit', () => {
+		const maxBytes = withBrowserCryptoLimit(() => {
+			createUlid()()
+			createUlid({ monotonic: true })()
+		})
+
+		expect(maxBytes).toBeGreaterThan(0)
+		expect(maxBytes).toBeLessThanOrEqual(GET_RANDOM_VALUES_MAX_BYTES)
+	})
 })
 
 describe('ulid({ monotonic: true })', () => {
@@ -148,6 +160,34 @@ describe('ulid({ monotonic: true })', () => {
 		expect(ids.size).toBe(10_000)
 	})
 })
+
+function withBrowserCryptoLimit(run: () => void): number {
+	const originalCrypto = globalThis.crypto
+	let maxBytes = 0
+	const fakeCrypto = {
+		getRandomValues<T extends ArrayBufferView>(array: T): T {
+			maxBytes = Math.max(maxBytes, array.byteLength)
+			if (array.byteLength > GET_RANDOM_VALUES_MAX_BYTES)
+				throw new Error('getRandomValues byte limit exceeded')
+			return originalCrypto.getRandomValues(array)
+		}
+	} as Crypto
+
+	Object.defineProperty(globalThis, 'crypto', {
+		configurable: true,
+		value: fakeCrypto
+	})
+
+	try {
+		run()
+		return maxBytes
+	} finally {
+		Object.defineProperty(globalThis, 'crypto', {
+			configurable: true,
+			value: originalCrypto
+		})
+	}
+}
 
 describe('createUlid (non-monotonic, default)', () => {
 	it('creates an isolated generator', () => {

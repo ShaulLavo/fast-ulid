@@ -66,7 +66,7 @@ Extract the UNIX millisecond timestamp from a ULID string. Accepts uppercase or 
 
 ## What makes it fast
 
-- **Batched `crypto.getRandomValues`** — one call per 8,192 IDs instead of every call
+- **Batched `crypto.getRandomValues`** — one browser-safe call per 4,096 IDs instead of every call
 - **Pair lookup table** — 1024-entry table maps 10 bits to a 2-char string, eliminates TextDecoder from non-monotonic path
 - **Timestamp caching** — skips re-encoding when ms hasn't changed
 - **Monotonic increment** — same-ms IDs bump a counter instead of regenerating randomness
@@ -75,7 +75,7 @@ Extract the UNIX millisecond timestamp from a ULID string. Accepts uppercase or 
 
 ## Spec compliance
 
-Fully compliant with the [ULID spec](https://github.com/ulid/spec). 45 tests verify:
+Fully compliant with the [ULID spec](https://github.com/ulid/spec). The test suite verifies:
 
 | Requirement | |
 |---|---|
