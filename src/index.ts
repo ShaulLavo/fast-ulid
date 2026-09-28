@@ -60,18 +60,16 @@ function monoIncrement(s: MonoState): boolean {
 			const next = v + 1
 			s.lastRandom[i] = next
 			s.out[10 + i] = ENC[next]
+			// Clear carried digits only after finding room to increment.
+			// An exhausted suffix must remain exhausted on every retry.
+			for (let j = i + 1; j < RANDOM_DIGITS; j++) {
+				s.lastRandom[j] = 0
+				s.out[10 + j] = ENC[0]
+			}
 			return true
 		}
-		s.lastRandom[i] = 0
-		s.out[10 + i] = ENC[0]
 	}
 	return false
-}
-
-function monoNextTs(prev: number): number {
-	let t = Date.now()
-	while (t <= prev) t = Date.now()
-	return t
 }
 
 function createMonotonic(): () => string {
@@ -89,9 +87,10 @@ function createMonotonic(): () => string {
 		const ts = now > s.lastTimestamp ? now : s.lastTimestamp
 
 		if (ts > s.lastTimestamp) {
-			s.lastTimestamp = ts
-			writeTimestamp(s.out, ts)
+			// A failed refill must not commit the new timestamp.
 			monoSetRandom(s)
+			writeTimestamp(s.out, ts)
+			s.lastTimestamp = ts
 			return s.dec.decode(s.out)
 		}
 
@@ -99,10 +98,7 @@ function createMonotonic(): () => string {
 			return s.dec.decode(s.out)
 		}
 
-		s.lastTimestamp = monoNextTs(s.lastTimestamp)
-		writeTimestamp(s.out, s.lastTimestamp)
-		monoSetRandom(s)
-		return s.dec.decode(s.out)
+		throw new RangeError('ULID random component overflow')
 	}
 }
 
@@ -191,20 +187,27 @@ for (let i = 0; i < 32; i++) {
 	if (lower !== ENCODING.charCodeAt(i)) DEC[lower] = i
 }
 
-/** Extract the UNIX-ms timestamp from a ULID string. Accepts uppercase or lowercase. */
+/**
+ * Extract the UNIX-ms timestamp from a 26-character ULID string.
+ * Accepts uppercase or lowercase. Validates the length and 48-bit timestamp
+ * prefix, but does not validate the random suffix.
+ */
 export function timestamp(id: string): number {
-	const d0 = DEC[id.charCodeAt(0)]
-	const d1 = DEC[id.charCodeAt(1)]
-	const d2 = DEC[id.charCodeAt(2)]
-	const d3 = DEC[id.charCodeAt(3)]
-	const d4 = DEC[id.charCodeAt(4)]
-	const d5 = DEC[id.charCodeAt(5)]
-	const d6 = DEC[id.charCodeAt(6)]
-	const d7 = DEC[id.charCodeAt(7)]
-	const d8 = DEC[id.charCodeAt(8)]
-	const d9 = DEC[id.charCodeAt(9)]
+	if (typeof id !== 'string' || id.length !== 26)
+		throw new Error('Invalid ULID')
 
-	if ((d0 | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9) === 0xff)
+	const d0 = DEC[id.charCodeAt(0)] ?? 0xff
+	const d1 = DEC[id.charCodeAt(1)] ?? 0xff
+	const d2 = DEC[id.charCodeAt(2)] ?? 0xff
+	const d3 = DEC[id.charCodeAt(3)] ?? 0xff
+	const d4 = DEC[id.charCodeAt(4)] ?? 0xff
+	const d5 = DEC[id.charCodeAt(5)] ?? 0xff
+	const d6 = DEC[id.charCodeAt(6)] ?? 0xff
+	const d7 = DEC[id.charCodeAt(7)] ?? 0xff
+	const d8 = DEC[id.charCodeAt(8)] ?? 0xff
+	const d9 = DEC[id.charCodeAt(9)] ?? 0xff
+
+	if (d0 > 7 || (d0 | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9) === 0xff)
 		throw new Error('Invalid ULID')
 
 	return (

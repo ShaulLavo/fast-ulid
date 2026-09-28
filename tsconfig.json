@@ -12,7 +12,7 @@
 		"declarationMap": true,
 		"resolveJsonModule": true,
 		"outDir": "./dist",
-		"rootDir": "./src"
+		"rootDir": "."
 	},
 	"include": ["src", "test"]
 }

@@ -1,7 +1,7 @@
 {
 	"name": "fast-ulid",
 	"version": "1.2.2",
-	"description": "Fastest spec-compliant ULID generator. Zero dependencies.",
+	"description": "Fast ULID generator. Zero dependencies.",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -18,7 +18,10 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"test": "bun test",
-		"prepublishOnly": "bun run build"
+		"prepublishOnly": "bun run build",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"test:node": "npm run build && node --test scripts/test-node.mjs",
+		"check": "npm run typecheck && npm test && npm run test:node"
 	},
 	"keywords": [
 		"ulid",
@@ -45,5 +48,8 @@
 	"devDependencies": {
 		"typescript": "^5.7.0",
 		"bun-types": "latest"
+	},
+	"engines": {
+		"node": ">=20"
 	}
 }
