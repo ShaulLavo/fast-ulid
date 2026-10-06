@@ -56,18 +56,17 @@ function monoSetRandom(s: MonoState): void {
 function monoIncrement(s: MonoState): boolean {
 	for (let i = RANDOM_DIGITS - 1; i >= 0; i--) {
 		const v = s.lastRandom[i]
-		if (v < MAX_DIGIT) {
-			const next = v + 1
-			s.lastRandom[i] = next
-			s.out[10 + i] = ENC[next]
-			// Clear carried digits only after finding room to increment.
-			// An exhausted suffix must remain exhausted on every retry.
-			for (let j = i + 1; j < RANDOM_DIGITS; j++) {
-				s.lastRandom[j] = 0
-				s.out[10 + j] = ENC[0]
-			}
-			return true
+		if (v === MAX_DIGIT) continue
+		const next = v + 1
+		s.lastRandom[i] = next
+		s.out[10 + i] = ENC[next]
+		// Clear carried digits only after finding room to increment.
+		// An exhausted suffix must remain exhausted on every retry.
+		for (let j = i + 1; j < RANDOM_DIGITS; j++) {
+			s.lastRandom[j] = 0
+			s.out[10 + j] = ENC[0]
 		}
+		return true
 	}
 	return false
 }
