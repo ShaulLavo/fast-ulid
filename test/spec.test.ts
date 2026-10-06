@@ -150,24 +150,39 @@ describe('ULID spec compliance', () => {
 	})
 
 	describe('5. Overflow handling', () => {
-		it('handles randomness overflow by advancing timestamp', () => {
-			const gen = createUlid({ monotonic: true })
+		it('throws on forced overflow, stays exhausted on retry, and recovers after time advances', () => {
 			const originalNow = Date.now
+			const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
 			let fakeTime = 1_700_000_000_000
-			Date.now = () => fakeTime
+			let clockReads = 0
+			Date.now = () => {
+				// Bound the old busy-wait so a regression fails instead of hanging.
+				if (++clockReads > 100) throw new Error('Unexpected clock polling')
+				return fakeTime
+			}
+			Object.defineProperty(globalThis, 'crypto', {
+				configurable: true,
+				value: { getRandomValues: (array: Uint8Array) => array.fill(31) }
+			})
 
 			try {
-				const id1 = gen()
-
-				for (let i = 0; i < 100; i++) {
-					gen()
-				}
-
-				const lastId = gen()
-				expect(lastId).toMatch(CROCKFORD_RE)
-				expect(lastId > id1).toBe(true)
+				const gen = createUlid({ monotonic: true })
+				const first = gen()
+				expect(first.slice(10)).toBe('Z'.repeat(16))
+				expect(gen).toThrow('ULID random component overflow')
+				expect(gen).toThrow('ULID random component overflow')
+				fakeTime--
+				expect(gen).toThrow('ULID random component overflow')
+				fakeTime = 1_700_000_000_001
+				const recovered = gen()
+				expect(recovered).toMatch(CROCKFORD_RE)
+				expect(recovered > first).toBe(true)
+				expect(timestamp(recovered)).toBe(fakeTime)
+				expect(clockReads).toBe(5)
 			} finally {
 				Date.now = originalNow
+				if (originalCrypto) Object.defineProperty(globalThis, 'crypto', originalCrypto)
+				else Reflect.deleteProperty(globalThis, 'crypto')
 			}
 		})
 	})
